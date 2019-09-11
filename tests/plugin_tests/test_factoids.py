@@ -1,11 +1,15 @@
+import importlib
 from textwrap import dedent
 
-import pytest
-from mock import patch, MagicMock, call
-from responses import RequestsMock
+from mock import MagicMock, call, patch
 
 
 def test_forget():
+    from cloudbot.util import database
+    from plugins import factoids
+    importlib.reload(database)
+    importlib.reload(factoids)
+
     mock_session = MagicMock()
     mock_notice = MagicMock()
     with patch('plugins.factoids.remove_fact') as func:
@@ -15,40 +19,41 @@ def test_forget():
         func.assert_called_with('#example', ['foo', 'bar'], mock_session, mock_notice)
 
 
-@pytest.fixture
-def patch_paste():
-    with patch('cloudbot.util.web.paste') as mock:
-        yield mock
+def test_remove_fact_no_paste(mock_requests):
+    from cloudbot.util import database
+    from plugins import factoids
+    importlib.reload(database)
+    importlib.reload(factoids)
 
+    factoids.factoid_cache.clear()
+    mock_requests.add(mock_requests.POST, 'https://hastebin.com/documents', status=404)
+    mock_session = MagicMock()
+    mock_notice = MagicMock()
 
-def test_remove_fact_no_paste():
-    from plugins.factoids import factoid_cache
-    factoid_cache.clear()
-    with RequestsMock() as reqs:
-        reqs.add(reqs.POST, 'https://hastebin.com/documents', status=404)
-        mock_session = MagicMock()
-        mock_notice = MagicMock()
+    factoids.remove_fact('#example', ['foo'], mock_session, mock_notice)
+    mock_notice.assert_called_once_with("Unknown factoids: 'foo'")
 
-        from plugins.factoids import remove_fact
-        remove_fact('#example', ['foo'], mock_session, mock_notice)
-        mock_notice.assert_called_once_with("Unknown factoids: 'foo'")
+    mock_session.execute.assert_not_called()
 
-        mock_session.execute.assert_not_called()
+    mock_notice.reset_mock()
 
-        mock_notice.reset_mock()
+    factoids.factoid_cache['#example']['foo'] = 'bar'
 
-        factoid_cache['#example']['foo'] = 'bar'
+    factoids.remove_fact('#example', ['foo', 'bar'], mock_session, mock_notice)
+    mock_notice.assert_has_calls([
+        call("Unknown factoids: 'bar'"),
+        call('Unable to paste removed data, not removing facts'),
+    ])
 
-        remove_fact('#example', ['foo', 'bar'], mock_session, mock_notice)
-        mock_notice.assert_has_calls([
-            call("Unknown factoids: 'bar'"),
-            call('Unable to paste removed data, not removing facts'),
-        ])
-
-        mock_session.execute.assert_not_called()
+    mock_session.execute.assert_not_called()
 
 
 def test_remove_fact(patch_paste):
+    from cloudbot.util import database
+    from plugins import factoids
+    importlib.reload(database)
+    importlib.reload(factoids)
+
     from plugins.factoids import factoid_cache
     factoid_cache.clear()
     mock_session = MagicMock()
@@ -82,6 +87,11 @@ def test_remove_fact(patch_paste):
 
 
 def test_clear_facts():
+    from cloudbot.util import database
+    from plugins import factoids
+    importlib.reload(database)
+    importlib.reload(factoids)
+
     mock_session = MagicMock()
 
     from plugins.factoids import forget_all

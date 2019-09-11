@@ -1,4 +1,5 @@
 import pytest
+from mock import MagicMock
 
 
 @pytest.mark.parametrize('text,post_id', [
@@ -28,8 +29,13 @@ def test_post_re_no_match(text):
 
 @pytest.mark.parametrize('text,output', [
     ('test', 'test'),
+    ('/test', 'test'),
+    ('test/', 'test'),
+    ('/test/', 'test'),
     ('r/test', 'test'),
+    ('r/test/', 'test'),
     ('/r/test', 'test'),
+    ('/r/test/', 'test'),
 ])
 def test_get_user(text, output):
     from plugins.reddit_info import get_sub
@@ -38,11 +44,39 @@ def test_get_user(text, output):
 
 @pytest.mark.parametrize('text,output', [
     ('test', 'test'),
+    ('test/', 'test'),
+    ('/test', 'test'),
+    ('/test/', 'test'),
     ('/u/test', 'test'),
     ('u/test', 'test'),
     ('/user/test', 'test'),
     ('user/test', 'test'),
+    ('/u/test/', 'test'),
+    ('u/test/', 'test'),
+    ('/user/test/', 'test'),
+    ('user/test/', 'test'),
+    ('user', 'user'),
+    ('/user', 'user'),
+    ('user/', 'user'),
+    ('/user/', 'user'),
+    ('u/user', 'user'),
+    ('/u/user', 'user'),
 ])
 def test_get_sub(text, output):
     from plugins.reddit_info import get_user
     assert get_user(text) == output
+
+
+def test_reddit_no_posts(mock_requests):
+    from plugins import reddit_info
+    mock_requests.add(
+        'GET',
+        'https://reddit.com/r/foobar/.json',
+        json={"data": {"children": []}},
+    )
+
+    reply_mock = MagicMock()
+
+    response = reddit_info.reddit("/r/FooBar", reply_mock)
+
+    assert response == "There do not appear to be any posts to show."

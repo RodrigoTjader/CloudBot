@@ -19,6 +19,7 @@ import cloudbot.bot
 from cloudbot import hook
 from cloudbot.clients.irc import IrcClient
 from cloudbot.util import web
+from cloudbot.util.mapping import KeyFoldDict, KeyFoldMixin
 
 logger = logging.getLogger("cloudbot")
 
@@ -26,64 +27,6 @@ logger = logging.getLogger("cloudbot")
 class WeakDict(dict):
     """
     A subclass of dict to allow it to be weakly referenced
-    """
-
-
-# noinspection PyUnresolvedReferences
-class KeyFoldMixin:
-    """
-    A mixin for Mapping to allow for case-insensitive keys
-    """
-
-    def __contains__(self, item):
-        return super().__contains__(item.casefold())
-
-    def __getitem__(self, item):
-        return super().__getitem__(item.casefold())
-
-    def __setitem__(self, key, value):
-        return super().__setitem__(key.casefold(), value)
-
-    def __delitem__(self, key):
-        return super().__delitem__(key.casefold())
-
-    def pop(self, key, *args, **kwargs):
-        """
-        Wraps `dict.pop`
-        """
-        return super().pop(key.casefold(), *args, **kwargs)
-
-    def get(self, key, default=None):
-        """
-        Wrap `dict.get`
-        """
-        return super().get(key.casefold(), default)
-
-    def setdefault(self, key, default=None):
-        """
-        Wrap `dict.setdefault`
-        """
-        return super().setdefault(key.casefold(), default)
-
-    def update(self, mapping=None, **kwargs):
-        """
-        Wrap `dict.update`
-        """
-        if mapping is not None:
-            if hasattr(mapping, 'keys'):
-                for k in mapping.keys():
-                    self[k] = mapping[k]
-            else:
-                for k, v in mapping:
-                    self[k] = v
-
-        for k in kwargs:
-            self[k] = kwargs[k]
-
-
-class KeyFoldDict(KeyFoldMixin, dict):
-    """
-    KeyFolded dict type
     """
 
 
@@ -548,11 +491,16 @@ def replace_user_data(conn, chan_data):
     new_data = chan_data.data.pop("new_users", [])
     has_uh_i_n = is_cap_available(conn, "userhost-in-names")
     has_multi_pfx = is_cap_available(conn, "multi-prefix")
-    chan_data.users.clear()
+    old_data = chan_data.data.pop('old_users', {})
+    new_names = set()
+
     for name in new_data:
         nick, ident, host, status = parse_names_item(
             name, statuses, has_multi_pfx, has_uh_i_n
         )
+
+        new_names.update(nick.casefold())
+
         user_data = get_users(conn).getuser(nick)
         user_data.nick = nick
         if ident:
@@ -563,6 +511,10 @@ def replace_user_data(conn, chan_data):
 
         memb_data = user_data.join_channel(chan_data)
         memb_data.status = status
+
+    for old_nick in old_data:
+        if old_nick not in new_names:
+            del chan_data.users[old_nick]
 
 
 @hook.irc_raw(['353', '366'], singlethread=True)
@@ -581,6 +533,9 @@ def on_names(conn, irc_paramlist, irc_command):
 
     users = chan_data.data.setdefault("new_users", [])
     if not chan_data.receiving_names:
+        chan_data.data['old_users'] = old = ChannelMembersDict(chan_data)
+        old.update(chan_data.users)
+
         chan_data.receiving_names = True
         users.clear()
 
